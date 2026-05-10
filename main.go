@@ -12,6 +12,8 @@ func usage() {
 Commands:
   top-tracks [short|medium|long]   Your top tracks (default: medium)
   clean-playlist                   Tracks in your playlists that are not liked
+  following                        Artists you follow
+  not-following                    Artists with liked tracks you don't follow
 
 `)
 }
@@ -46,6 +48,16 @@ func main() {
 	case "clean-playlist":
 		if err := cmdCleanPlaylist(ctx, client); err != nil {
 			fmt.Fprintf(os.Stderr, "clean-playlist: %v\n", err)
+			os.Exit(1)
+		}
+	case "following":
+		if err := cmdFollowing(ctx, client); err != nil {
+			fmt.Fprintf(os.Stderr, "following: %v\n", err)
+			os.Exit(1)
+		}
+	case "not-following":
+		if err := cmdNotFollowing(ctx, client); err != nil {
+			fmt.Fprintf(os.Stderr, "not-following: %v\n", err)
 			os.Exit(1)
 		}
 	default:

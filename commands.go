@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"sort"
 	"strings"
 
-	"github.com/zmb3/spotify/v2"
+	spotify "github.com/zmb3/spotify/v2"
 )
 
 func cmdTopTracks(ctx context.Context, client *spotify.Client, rangeArg string) error {
@@ -36,6 +38,28 @@ func cmdTopTracks(ctx context.Context, client *spotify.Client, rangeArg string) 
 			artists[j] = a.Name
 		}
 		fmt.Printf("%2d. %s — %s\n", i+1, t.Name, strings.Join(artists, ", "))
+	}
+	return nil
+}
+
+func cmdFollowing(ctx context.Context, client *spotify.Client) error {
+	var artists []spotify.FullArtist
+	var cursor string
+	for {
+		page, err := client.CurrentUsersFollowedArtists(ctx, spotify.Limit(50), spotify.After(cursor))
+		if err != nil {
+			return fmt.Errorf("fetch followed artists: %w", err)
+		}
+		artists = append(artists, page.Artists...)
+		if page.Cursor.After == "" {
+			break
+		}
+		cursor = page.Cursor.After
+	}
+
+	fmt.Printf("Following (%d artists):\n\n", len(artists))
+	for i, a := range artists {
+		fmt.Printf("%2d. %s\n", i+1, a.Name)
 	}
 	return nil
 }
@@ -75,28 +99,25 @@ func cmdCleanPlaylist(ctx context.Context, client *spotify.Client) error {
 				continue
 			}
 
-			itemPage, err := client.GetPlaylistItems(ctx, pl.ID, spotify.Limit(100))
+			trackPage, err := client.GetPlaylistTracks(ctx, pl.ID, spotify.Limit(100))
 			if err != nil {
-				return fmt.Errorf("fetch items for playlist %q: %w", pl.Name, err)
+				fmt.Fprintf(os.Stderr, "warning: skipping playlist %q: %v\n", pl.Name, err)
+				continue
 			}
 			for {
-				for _, item := range itemPage.Items {
+				for _, item := range trackPage.Tracks {
 					if item.IsLocal {
-						continue // local files can't be liked
+						continue
 					}
-					track := item.Track.Track
-					if track == nil {
-						continue // skip episodes
-					}
-					if _, ok := liked[track.ID]; !ok {
-						artists := make([]string, len(track.Artists))
-						for i, a := range track.Artists {
+					if _, ok := liked[item.Track.ID]; !ok {
+						artists := make([]string, len(item.Track.Artists))
+						for i, a := range item.Track.Artists {
 							artists[i] = a.Name
 						}
-						fmt.Printf("%s: %s - %s\n", pl.Name, track.Name, strings.Join(artists, ", "))
+						fmt.Printf("%s: %s - %s\n", pl.Name, item.Track.Name, strings.Join(artists, ", "))
 					}
 				}
-				if err := client.NextPage(ctx, itemPage); err == spotify.ErrNoMorePages {
+				if err := client.NextPage(ctx, trackPage); err == spotify.ErrNoMorePages {
 					break
 				} else if err != nil {
 					return fmt.Errorf("fetch items for playlist %q: %w", pl.Name, err)
@@ -110,5 +131,73 @@ func cmdCleanPlaylist(ctx context.Context, client *spotify.Client) error {
 		}
 	}
 
+	return nil
+}
+
+func cmdNotFollowing(ctx context.Context, client *spotify.Client) error {
+	followed := make(map[spotify.ID]struct{})
+	var cursor string
+	for {
+		page, err := client.CurrentUsersFollowedArtists(ctx, spotify.Limit(50), spotify.After(cursor))
+		if err != nil {
+			return fmt.Errorf("fetch followed artists: %w", err)
+		}
+		for _, a := range page.Artists {
+			followed[a.ID] = struct{}{}
+		}
+		if page.Cursor.After == "" {
+			break
+		}
+		cursor = page.Cursor.After
+	}
+
+	type artistEntry struct {
+		name  string
+		count int
+	}
+	counts := make(map[spotify.ID]*artistEntry)
+
+	savedPage, err := client.CurrentUsersTracks(ctx, spotify.Limit(50))
+	if err != nil {
+		return fmt.Errorf("fetch liked tracks: %w", err)
+	}
+	for {
+		for _, t := range savedPage.Tracks {
+			for _, a := range t.Artists {
+				if _, ok := followed[a.ID]; ok {
+					continue
+				}
+				if counts[a.ID] == nil {
+					counts[a.ID] = &artistEntry{name: a.Name}
+				}
+				counts[a.ID].count++
+			}
+		}
+		if err := client.NextPage(ctx, savedPage); err == spotify.ErrNoMorePages {
+			break
+		} else if err != nil {
+			return fmt.Errorf("fetch liked tracks: %w", err)
+		}
+	}
+
+	type entry struct {
+		name  string
+		count int
+	}
+	entries := make([]entry, 0, len(counts))
+	for _, info := range counts {
+		entries = append(entries, entry{name: info.name, count: info.count})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].count != entries[j].count {
+			return entries[i].count > entries[j].count
+		}
+		return entries[i].name < entries[j].name
+	})
+
+	fmt.Printf("Artists with liked tracks you don't follow (%d):\n\n", len(entries))
+	for i, e := range entries {
+		fmt.Printf("%2d. %-40s %d track(s)\n", i+1, e.name, e.count)
+	}
 	return nil
 }

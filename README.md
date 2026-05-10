@@ -16,6 +16,8 @@ Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 http://127.0.0.1:8080/callback
 ```
 
+If other users should be able to use the app, add them under the user section.
+
 ### 2. Set environment variables
 
 ```bash

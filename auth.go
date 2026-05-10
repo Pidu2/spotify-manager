@@ -29,6 +29,7 @@ func newAuthenticator() *spotifyauth.Authenticator {
 		spotifyauth.WithScopes(
 			spotifyauth.ScopeUserTopRead,
 			spotifyauth.ScopeUserLibraryRead,
+			spotifyauth.ScopeUserFollowRead,
 			spotifyauth.ScopePlaylistReadPrivate,
 			spotifyauth.ScopePlaylistReadCollaborative,
 		),
