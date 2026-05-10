@@ -13,7 +13,8 @@ Commands:
   top-tracks [short|medium|long]   Your top tracks (default: medium)
   clean-playlist                   Tracks in your playlists that are not liked
   following                        Artists you follow
-  not-following                    Artists with liked tracks you don't follow
+  not-following [--follow]         Artists with liked tracks you don't follow
+                                   --follow: interactively follow each artist
 
 `)
 }
@@ -56,7 +57,8 @@ func main() {
 			os.Exit(1)
 		}
 	case "not-following":
-		if err := cmdNotFollowing(ctx, client); err != nil {
+		interactive := len(args) > 0 && args[0] == "--follow"
+		if err := cmdNotFollowing(ctx, client, interactive); err != nil {
 			fmt.Fprintf(os.Stderr, "not-following: %v\n", err)
 			os.Exit(1)
 		}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -134,7 +135,7 @@ func cmdCleanPlaylist(ctx context.Context, client *spotify.Client) error {
 	return nil
 }
 
-func cmdNotFollowing(ctx context.Context, client *spotify.Client) error {
+func cmdNotFollowing(ctx context.Context, client *spotify.Client, interactive bool) error {
 	followed := make(map[spotify.ID]struct{})
 	var cursor string
 	for {
@@ -181,12 +182,13 @@ func cmdNotFollowing(ctx context.Context, client *spotify.Client) error {
 	}
 
 	type entry struct {
+		id    spotify.ID
 		name  string
 		count int
 	}
 	entries := make([]entry, 0, len(counts))
-	for _, info := range counts {
-		entries = append(entries, entry{name: info.name, count: info.count})
+	for id, info := range counts {
+		entries = append(entries, entry{id: id, name: info.name, count: info.count})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].count != entries[j].count {
@@ -195,9 +197,34 @@ func cmdNotFollowing(ctx context.Context, client *spotify.Client) error {
 		return entries[i].name < entries[j].name
 	})
 
-	fmt.Printf("Artists with liked tracks you don't follow (%d):\n\n", len(entries))
-	for i, e := range entries {
-		fmt.Printf("%2d. %-40s %d track(s)\n", i+1, e.name, e.count)
+	if !interactive {
+		fmt.Printf("Artists with liked tracks you don't follow (%d):\n\n", len(entries))
+		for i, e := range entries {
+			fmt.Printf("%2d. %-40s %d track(s)\n", i+1, e.name, e.count)
+		}
+		return nil
+	}
+
+	scanner := bufio.NewScanner(os.Stdin)
+	newFollows := 0
+	for _, e := range entries {
+		fmt.Printf("%-40s %d track(s)  Follow? [y/N] ", e.name, e.count)
+		if !scanner.Scan() {
+			break
+		}
+		if strings.ToLower(strings.TrimSpace(scanner.Text())) == "y" {
+			if err := client.FollowArtist(ctx, e.id); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not follow %q: %v\n", e.name, err)
+			} else {
+				newFollows++
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read input: %w", err)
+	}
+	if newFollows > 0 {
+		fmt.Printf("\nNow following %d new artist(s).\n", newFollows)
 	}
 	return nil
 }
